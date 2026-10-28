@@ -32,6 +32,24 @@
       "titre": "📚 Mémoire verbale",
       "classement": "score",
       "unite": "pts"
+    },
+    {
+      "id": "chimp",
+      "titre": "🐒 Test du chimpanzé",
+      "classement": "score",
+      "unite": "nombres"
+    },
+    {
+      "id": "visuel",
+      "titre": "👁️ Mémoire visuelle",
+      "classement": "score",
+      "unite": "niv."
+    },
+    {
+      "id": "frappe",
+      "titre": "⌨️ Frappe",
+      "classement": "score",
+      "unite": "mots/min"
     }
   ]
 }

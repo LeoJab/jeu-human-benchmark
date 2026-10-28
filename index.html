@@ -434,11 +434,10 @@ const ALL_GAMES = [
     rate: rateBy([[90, '⚡ Clavier en feu'], [70, '🔥 Pianiste'], [50, '💪 Solide'], [35, '🙂 Correct'], [0, '🦕 À deux doigts']]),
     play: playFrappe },
 ];
-/* Le hub accepte 5 classements par jeu maximum (le principal + 4 onglets).
-   Classement de chaque épreuve :
+/* Classement de chaque épreuve :
    null = classement principal du hub, 'xxx' = onglet déclaré dans chadgang.json,
    '*'  = classement partagé géré par le jeu (stocké dans une salle du hub). */
-const EDITION = {"titre":"HUMAN BENCHMARK","sous":"CHADGANG EDITION","jeux":{"reflexes":null,"sequence":"sequence","viseur":"viseur","chiffres":"chiffres","verbal":"verbal","chimp":"*","visuel":"*","frappe":"*"}};
+const EDITION = {"titre":"HUMAN BENCHMARK","sous":"CHADGANG EDITION","jeux":{"reflexes":null,"sequence":"sequence","viseur":"viseur","chiffres":"chiffres","verbal":"verbal","chimp":"chimp","visuel":"visuel","frappe":"frappe"}};
 const GAMES = ALL_GAMES.filter(g => g.id in EDITION.jeux).map(g => { const v = EDITION.jeux[g.id]; return { ...g, shared: v === '*', tab: v === '*' ? null : v }; });
 const fmt = (g, s) => `${s} ${g.unite}`;
 
@@ -495,7 +494,7 @@ function upsert(st, g, id, name, best) {
 function sharedSync() {
   if (shared.p) return shared.p;
   shared.p = Promise.resolve(meReady).then(() => new Promise(resolve => {
-    const C = SDK(); if (!C || !C.join || !me.id) return resolve(null);
+    const C = SDK(); if (!C || !C.join || !me.id || !sharedGames().length) return resolve(null);
     let room, done = false;
     const end = v => { if (done) return; done = true; clearTimeout(to); setTimeout(() => { try { room && room.leave(); } catch {} }, 700); resolve(v); };
     const to = setTimeout(() => end(shared.st), 7000);
