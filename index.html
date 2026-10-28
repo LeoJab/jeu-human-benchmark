@@ -255,7 +255,7 @@ aside.board{width:300px;flex-shrink:0;background:#fff;border:var(--b);border-rad
   <section class="screen on" id="menu">
     <div class="hero">
       <h1>Qui a le cerveau<br>le plus <em>affûté</em> de la bande&nbsp;?</h1>
-      <p>8 épreuves, 8 classements. Réflexes, mémoire, précision, vitesse de frappe : choisis ton terrain et viens écraser les records des potes.</p>
+      <p id="heroP"></p>
     </div>
     <div class="grid" id="grid"></div>
   </section>
@@ -392,7 +392,7 @@ const MOTS_COURTS = ('le la les un une des de du et ou mais donc car il elle on 
    ===================================================================== */
 const rateBy = (tbl, low) => s => { for (const [v, l] of tbl) if (low ? s <= v : s >= v) return l; return tbl[tbl.length - 1][1]; };
 
-const GAMES = [
+const ALL_GAMES = [
   { id: 'reflexes', tab: null, nom: 'Réflexes', emoji: '⚡', color: '#ff4d6d', unite: 'ms', low: true,
     desc: 'Clique dès que l\'écran passe au vert.',
     regles: 'Attends que le rouge passe au <b>vert</b>, puis clique (ou appuie sur Espace) le plus vite possible. <b>5 essais</b>, on garde la moyenne. Cliquer trop tôt = essai à refaire.',
@@ -434,6 +434,12 @@ const GAMES = [
     rate: rateBy([[90, '⚡ Clavier en feu'], [70, '🔥 Pianiste'], [50, '💪 Solide'], [35, '🙂 Correct'], [0, '🦕 À deux doigts']]),
     play: playFrappe },
 ];
+/* Le hub accepte 5 classements par jeu maximum (le principal + 4 onglets).
+   Classement de chaque épreuve :
+   null = classement principal du hub, 'xxx' = onglet déclaré dans chadgang.json,
+   '*'  = classement partagé géré par le jeu (stocké dans une salle du hub). */
+const EDITION = {"titre":"HUMAN BENCHMARK","sous":"CHADGANG EDITION","jeux":{"reflexes":null,"sequence":"sequence","viseur":"viseur","chiffres":"chiffres","verbal":"verbal","chimp":"*","visuel":"*","frappe":"*"}};
+const GAMES = ALL_GAMES.filter(g => g.id in EDITION.jeux).map(g => { const v = EDITION.jeux[g.id]; return { ...g, shared: v === '*', tab: v === '*' ? null : v }; });
 const fmt = (g, s) => `${s} ${g.unite}`;
 
 /* =====================================================================
@@ -453,7 +459,69 @@ async function initMe() {
   if (C && C.me) { try { const m = await C.me(); if (m) me = { id: m.id, name: m.name || 'Joueur', avatar: m.avatar || null }; } catch {} }
   $('#meChip').innerHTML = avatarHTML(me) + `<span>${esc(me.name)}</span>`;
 }
+/* ---------------------------------------------------------------------
+   Classements partagés gérés par le jeu.
+   Le tableau des records est gardé par le hub comme « dernier message »
+   (keep) d'une salle dédiée. On s'y connecte quelques secondes, on lit,
+   on fusionne ses propres records, on renvoie si besoin, puis on repart.
+   Chaque joueur réinjecte ses records perso à chaque visite : si deux
+   envois se croisent ou si la salle est vidée, le tableau se répare seul.
+   --------------------------------------------------------------------- */
+const SHARED_ROOM = 'HBRECORDS', SHARED_MAX = 15;
+let shared = { st: null, t: 0, p: null }, meReady = null;
+const sharedGames = () => GAMES.filter(g => g.shared);
+function cleanState(s) {
+  const out = { t: 'hb', v: 0, b: {} };
+  if (s && s.t === 'hb' && s.b && typeof s.b === 'object') {
+    out.v = +s.v || 0;
+    for (const g of sharedGames()) out.b[g.id] = (Array.isArray(s.b[g.id]) ? s.b[g.id] : [])
+      .filter(e => Array.isArray(e) && e[0] && Number.isFinite(+e[2])).map(e => [String(e[0]).slice(0, 64), String(e[1] || '?').slice(0, 24), +e[2]]);
+  }
+  for (const g of sharedGames()) out.b[g.id] = out.b[g.id] || [];
+  return out;
+}
+function mergeInto(st, other) {
+  let changed = false;
+  for (const g of sharedGames()) for (const [id, name, best] of (other.b[g.id] || [])) changed = upsert(st, g, id, name, best) || changed;
+  return changed;
+}
+function upsert(st, g, id, name, best) {
+  const L = st.b[g.id], e = L.find(x => x[0] === id);
+  if (e) { if (!isBetter(g, best, e[2]) && e[1] === name) return false; if (isBetter(g, best, e[2])) e[2] = best; e[1] = name; }
+  else { if (L.length >= SHARED_MAX && !isBetter(g, best, L[L.length - 1][2])) return false; L.push([id, name, best]); }
+  L.sort((a, b) => g.low ? a[2] - b[2] : b[2] - a[2]); st.b[g.id] = L.slice(0, SHARED_MAX);
+  return true;
+}
+function sharedSync() {
+  if (shared.p) return shared.p;
+  shared.p = Promise.resolve(meReady).then(() => new Promise(resolve => {
+    const C = SDK(); if (!C || !C.join || !me.id) return resolve(null);
+    let room, done = false;
+    const end = v => { if (done) return; done = true; clearTimeout(to); setTimeout(() => { try { room && room.leave(); } catch {} }, 700); resolve(v); };
+    const to = setTimeout(() => end(shared.st), 7000);
+    try { room = C.join(SHARED_ROOM, { create: true }); } catch { return end(null); }
+    room.on('error', () => end(shared.st));
+    room.on('message', data => { if (data && data.t === 'hb' && shared.st) mergeInto(shared.st, cleanState(data)); });
+    room.on('ready', info => {
+      const st = cleanState(info && info.last);
+      if (shared.st) mergeInto(st, shared.st);
+      let changed = false;
+      for (const g of sharedGames()) { const b = localBest(g); if (b != null) changed = upsert(st, g, me.id, me.name, b) || changed; }
+      if (changed) { st.v++; try { room.send(st, { keep: true }); } catch {} }
+      shared.st = st; shared.t = Date.now(); end(st);
+    });
+  })).finally(() => { shared.p = null; });
+  return shared.p;
+}
+async function sharedBoard(g, force) {
+  if (force || !shared.st || Date.now() - shared.t > 30000) await sharedSync();
+  if (!shared.st) return null;
+  const L = shared.st.b[g.id] || [], i = L.findIndex(e => e[0] === me.id);
+  return { rows: L.map(e => ({ name: e[1], best: e[2], you: e[0] === me.id })), me: i >= 0 ? { rank: i + 1, best: L[i][2], name: L[i][1] } : null, shared: true };
+}
+
 async function hubBoard(g, force) {
+  if (g.shared) return sharedBoard(g, force);
   const C = SDK(); if (!C || !C.classement) return null;
   const k = g.id, c = boardCache[k];
   if (!force && c && Date.now() - c.t < 30000) return c.v;
@@ -468,7 +536,7 @@ async function renderBoard(g, el, max = 10, force) {
   let html = `<div class="bd-h">🏆 ${esc(g.nom)}</div>`;
   const medal = i => ['🥇', '🥈', '🥉'][i] || (i + 1);
   if (c && Array.isArray(c.rows)) {
-    html += `<div class="bd-s">Classement de tous les temps · ${g.low ? 'le plus bas gagne' : 'le plus haut gagne'}</div>`;
+    html += `<div class="bd-s">${c.shared ? 'Classement de la bande' : 'Classement de tous les temps'} · ${g.low ? 'le plus bas gagne' : 'le plus haut gagne'}</div>`;
     if (!c.rows.length) html += `<div class="empty">Personne n'a encore de score ici. Le trône est libre 👑</div>`;
     else {
       html += '<ol>' + c.rows.slice(0, max).map((r, i) => `<li class="${r.you ? 'you' : ''}"><span class="rk">${medal(i)}</span><span class="n">${esc(r.name)}</span><b>${esc(fmt(g, r.best))}</b></li>`).join('');
@@ -573,7 +641,16 @@ async function finish(g, score, extra = '') {
 
   // envoi au classement du hub
   const C = SDK();
-  if (C && C.finPartie && score > 0) {
+  if (g.shared && score > 0) {
+    // classement partagé : record de la bande si on bat le premier (avant fusion)
+    const before = shared.st ? (shared.st.b[g.id] || [])[0] : null;
+    const st = await sharedSync();
+    const top = st && (st.b[g.id] || [])[0];
+    if (st && top && top[0] === me.id && top[2] === score && (!before || before[0] !== me.id || isBetter(g, score, before[2])) && cur === g) {
+      badges.innerHTML = `<span class="badge hub">👑 NOUVEAU RECORD DE LA BANDE !</span>` + badges.innerHTML;
+      banner('👑 RECORD DE LA BANDE !'); flash('#ffd426'); confetti(240); cannons(); sfx.fanfare(); shake();
+    }
+  } else if (C && C.finPartie && score > 0) {
     try {
       const payload = { score }; if (g.tab) payload.tableau = g.tab;
       const r = await C.finPartie(payload);
@@ -920,8 +997,11 @@ $('#boardBtn').onclick = () => { if (!cur) return; $('#modal').classList.add('on
 $('#mx').onclick = () => $('#modal').classList.remove('on');
 $('#modal').addEventListener('click', e => { if (e.target.id === 'modal') $('#modal').classList.remove('on'); });
 
+$('#logo').innerHTML = `${esc(EDITION.titre)}<small>${esc(EDITION.sous)}</small>`;
+$('#heroP').textContent = `${GAMES.length} épreuves, ${GAMES.length} classements : ${GAMES.map(g => g.nom).join(', ')}. Choisis ton terrain et viens écraser les records des potes.`;
+meReady = initMe();
 buildMenu();
-initMe();
+meReady.then(() => sharedSync()).then(() => { if (!cur) refreshMenuRecords(); });
 // Arrivée directe sur une épreuve via ?jeu=reflexes (pratique pour partager un lien)
 try { const j = new URLSearchParams(location.search).get('jeu'); const g = GAMES.find(x => x.id === j); if (g) openGame(g); } catch {}
 </script>

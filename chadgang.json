@@ -7,13 +7,31 @@
   "image": "cover.png",
   "classement": "temps",
   "unite": "ms",
+  "titre": "⚡ Réflexes",
   "classements": [
-    { "id": "sequence", "titre": "🧩 Séquence", "classement": "score", "unite": "niv." },
-    { "id": "viseur", "titre": "🎯 Viseur", "classement": "temps", "unite": "ms" },
-    { "id": "chiffres", "titre": "🔢 Chiffres", "classement": "score", "unite": "chiffres" },
-    { "id": "verbal", "titre": "📚 Mémoire verbale", "classement": "score", "unite": "pts" },
-    { "id": "chimp", "titre": "🐒 Test du chimpanzé", "classement": "score", "unite": "nombres" },
-    { "id": "visuel", "titre": "👁️ Mémoire visuelle", "classement": "score", "unite": "niv." },
-    { "id": "frappe", "titre": "⌨️ Frappe", "classement": "score", "unite": "mots/min" }
+    {
+      "id": "sequence",
+      "titre": "🧩 Séquence",
+      "classement": "score",
+      "unite": "niv."
+    },
+    {
+      "id": "viseur",
+      "titre": "🎯 Viseur",
+      "classement": "temps",
+      "unite": "ms"
+    },
+    {
+      "id": "chiffres",
+      "titre": "🔢 Chiffres",
+      "classement": "score",
+      "unite": "chiffres"
+    },
+    {
+      "id": "verbal",
+      "titre": "📚 Mémoire verbale",
+      "classement": "score",
+      "unite": "pts"
+    }
   ]
 }
